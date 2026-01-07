@@ -1,0 +1,10 @@
+# Sistema de adquisición y procesamiento en tiempo real (ESP32)
+
+Este proyecto implementa un sistema modular de instrumentación digital:
+
+- comunicacion.py → adquisición de datos por puerto serie
+- operacion.py → procesamiento (diferencias discretas)
+- graficacion.py → visualización en tiempo real
+- main.py → orquestación del sistema
+
+Diseñado para experimentos de calorimetría / adquisición física en tiempo real.

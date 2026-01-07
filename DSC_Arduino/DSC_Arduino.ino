@@ -11,7 +11,7 @@ void setup() {
 }
 
 void loop() {
-  delay(500); // El DHT22 necesita al menos 2 segundos entre lecturas
+  delay(250); // El DHT22 necesita al menos 2 segundos entre lecturas
 
   float humedad = dht.readHumidity();
   float temperatura = dht.readTemperature(); // Celsius

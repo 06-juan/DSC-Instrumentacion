@@ -27,7 +27,7 @@ class GraficadorTiempoReal:
             self.diferencias[:] = self.diferencias[1:]
 
         self.line.set_data(self.tiempos, self.diferencias)
-        plt.pause(0.001)
+        plt.pause(0.0001)
 
     def mostrar(self):
         plt.show()

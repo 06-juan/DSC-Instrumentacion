@@ -21,7 +21,7 @@ try:
             continue
 
         graf.actualizar(t, diff)
-        print(f"t = {t:.3f} s | Δ = {diff:.6f}")
+        #print(f"t = {t:.3f} s | Δ = {diff:.6f}")
 
 except KeyboardInterrupt:
     print("\nInterrumpido por el usuario")

@@ -72,7 +72,7 @@ def tick():
         if t is None:
             return
 
-        graf.actualizar(t, diff)
+        graf.actualizar(t, diff, valor)
 
 
 # -------------------------

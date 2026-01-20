@@ -2,3 +2,5 @@
 __pycache__/
 *.pyc
 datos_serial.csv
+test_ads1220/
+DSC_Placa/

@@ -64,15 +64,21 @@ def tick():
     # ==============================
     if estado == "midiendo":
         try:
-            valor = float(linea)
-        except ValueError:
+            # Suponiendo que llega "25.0,24.5"
+            valores = linea.split(",")
+            t1 = float(valores[0])
+            t2 = float(valores[1])
+        except (ValueError, IndexError):
             return
 
-        t, diff = op.procesar(valor)
+        # Procesamos enviando ambos valores
+        t, diff = op.procesar(t1, t2)
+        
         if t is None:
             return
 
-        graf.actualizar(t, diff, valor)
+        # Actualizamos la gráfica (usamos t1 como referencia visual de temp)
+        graf.actualizar(t, diff, t1, t2)
 
 
 # -------------------------

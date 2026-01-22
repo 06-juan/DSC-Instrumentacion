@@ -19,12 +19,12 @@ print("Sistema iniciado. Esperando ping del ESP32...")
 # TICK PRINCIPAL (Qt manda)
 # -------------------------
 def tick():
-    global estado, t_inicio
+    global estado, t_inicio, op
 
     linea = com.leer_linea()
 
     # ==============================
-    # 1. GESTIÓN DE TIEMPO
+    # 1. GESTIÓN DE TIEMPO (Fin de medición)
     # ==============================
     if estado == "midiendo":
         if time.time() - t_inicio >= n:
@@ -32,8 +32,8 @@ def tick():
             com.enviar("stop")
             estado = "idle"
             t_inicio = None
-            return
-
+            # No retornamos aquí para permitir leer el buffer si quedó algo
+    
     # ==============================
     # 2. SI NO LLEGA NADA, SALIMOS
     # ==============================
@@ -43,20 +43,27 @@ def tick():
     linea = linea.strip().lower()
 
     # ==============================
-    # 3. PROTOCOLO PING / PONG
+    # 3. PROTOCOLO PING / PONG (Reinicio de sesión)
     # ==============================
+    # Si llega un ping y estamos en idle, iniciamos una nueva medición
     if linea == "ping" and estado == "idle":
+        print("\n>> NUEVA MEDICIÓN INICIADA")
         print(">> Ping recibido")
+        
+        # REINICIO CRÍTICO:
+        op = OperadorDiferencia() # Reiniciamos el operador para que el tiempo T empiece en 0
+        graf.limpiar()            # Borramos la gráfica anterior
+        
         com.enviar(f"pong {n}")
         print(f"<< Pong enviado con n = {n}")
+        
         t_inicio = time.time()
         estado = "midiendo"
-        graf.limpiar()
         return
 
+    # Si el ESP32 confirma que se detuvo
     if linea == "pong" and estado == "idle":
-        print("<< Pong recibido, medición detenida")
-        t_inicio = None
+        print("<< Confirmación de parada recibida (ESP32 en modo Home)")
         return
 
     # ==============================
@@ -66,32 +73,32 @@ def tick():
         try:
             # Suponiendo que llega "25.0,24.5"
             valores = linea.split(",")
+            if len(valores) < 2: return
+            
             t1 = float(valores[0])
             t2 = float(valores[1])
+            
+            # Procesamos enviando ambos valores
+            t, diff = op.procesar(t1, t2)
+            
+            if t is None:
+                return
+
+            # Actualizamos la gráfica
+            graf.actualizar(t, diff, t1, t2)
+            
         except (ValueError, IndexError):
+            # Ignoramos líneas mal formadas o ruido
             return
-
-        # Procesamos enviando ambos valores
-        t, diff = op.procesar(t1, t2)
-        
-        if t is None:
-            return
-
-        # Actualizamos la gráfica (usamos t1 como referencia visual de temp)
-        graf.actualizar(t, diff, t1, t2)
-
 
 # -------------------------
-# QT TIMER (el corazón)
+# QT TIMER
 # -------------------------
 timer = QtCore.QTimer()
 timer.timeout.connect(tick)
-timer.start(10)   # cada 10 ms → 100 Hz de refresco
+timer.start(10)   # 10 ms
 
 
-# -------------------------
-# ARRANQUE DE LA APP
-# -------------------------
 if __name__ == "__main__":
     try:
         graf.app.exec()

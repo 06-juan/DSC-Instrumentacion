@@ -3,7 +3,10 @@
 #include <math.h>
 #include "FS.h"
 
-// --- TUS PINOS ACTUALES ---
+// --- PINES PANTALLA Y TÁCTIL (VSPI - Definidos en User_Setup.h) ---
+// TFT_DC 4, TFT_CS 15, TFT_MOSI 16, TFT_MISO 5, TFT_SCLK 17, TFT_RST 2, TOUCH_CS 18
+
+// --- PINES ADS1220 ---
 #define HSPI_SCLK  33
 #define HSPI_MISO  26
 #define HSPI_MOSI  25

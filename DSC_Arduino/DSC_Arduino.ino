@@ -37,6 +37,79 @@ int remainingSeconds = 0;
 TaskHandle_t TareaADC;
 TaskHandle_t TareaInterfaz;
 
+// --- CONFIGURACIÓN FILTRO FIR ---
+#define FIR_ORDER 47  // Cambia esto al orden de tu filtro (ej. 5, 10, 21...)
+const float fir_coeffs[FIR_ORDER] = { 0.000000000000000000,
+0.000052812701766234,
+0.000227780984395073,
+0.000556674204923567,
+0.001080638242463714,
+0.001848965451925914,
+0.002916235039017790,
+0.004337949677900377,
+0.006164983047460567,
+0.008437318120861112,
+0.011177678264584583,
+0.014385717266750539,
+0.018033430880593306,
+0.022062378850126810,
+0.026383167587788789,
+0.030877451652306920,
+0.035402484820087544,
+0.039798010916682079,
+0.043895054667754355,
+0.047525977081741028,
+0.050535018720183199,
+0.052788482896461396,
+0.054183717786886923,
+0.054656142274675905,
+0.054183717786886923,
+0.052788482896461396,
+0.050535018720183192,
+0.047525977081741048,
+0.043895054667754362,
+0.039798010916682079,
+0.035402484820087544,
+0.030877451652306945,
+0.026383167587788796,
+0.022062378850126806,
+0.018033430880593299,
+0.014385717266750546,
+0.011177678264584590,
+0.008437318120861115,
+0.006164983047460575,
+0.004337949677900381,
+0.002916235039017789,
+0.001848965451925916,
+0.001080638242463714,
+0.000556674204923569,
+0.000227780984395074,
+0.000052812701766235,
+0.000000000000000000 }; // Pon tus coeficientes aquí
+
+// Estructura para que cada termocupla tenga su propia memoria
+struct FIRFilter {
+  float history[FIR_ORDER];
+  int index;
+};
+
+FIRFilter filterTC1 = { {0}, 0 };
+FIRFilter filterTC2 = { {0}, 0 };
+
+// La función mágica que procesa el dato
+float applyFIR(FIRFilter *f, float newValue) {
+  f->history[f->index] = newValue; // Metemos el dato nuevo en la fila
+  f->index = (f->index + 1) % FIR_ORDER; // Movemos el puntero de forma circular
+
+  float output = 0;
+  for (int i = 0; i < FIR_ORDER; i++) {
+    // Sumamos: valor_histórico * coeficiente_correspondiente
+    int hIdx = (f->index + i) % FIR_ORDER;
+    output += f->history[hIdx] * fir_coeffs[i];
+  }
+  return output;
+}
+
 // ------------------ SETUP ------------------
 void setup() {
   Serial.begin(115200);
@@ -72,12 +145,11 @@ void loop() {
 void loopLectura(void * pvParameters) {
   for (;;) {
     if (midiendo) {
-      // 1. Leer CJC
+      // 1. Leer CJC (Compensación de unión fría)
       config_ads_ntc(); 
       ads_start(); 
       vTaskDelay(pdMS_TO_TICKS(25)); 
       long rawNTC = wait_and_read();
-      
       float vNTC = (float)rawNTC * (VOLTAGE_REF / 8388607.0);
       float rNTC = vNTC / IDAC_VALUE;
       float tempCJC = (1.0 / ((log(rNTC / RES_NOMINAL) / BETA_COEFF) + (1.0 / TEMP_NOMINAL))) - 273.15;
@@ -88,7 +160,9 @@ void loopLectura(void * pvParameters) {
       vTaskDelay(pdMS_TO_TICKS(25)); 
       long rawTC1 = wait_and_read();
       float vTC1 = (float)rawTC1 * (VOLTAGE_REF / (8388607.0 * GAIN));
-      float t1 = (vTC1 / K_SENSITIVITY) + tempCJC;
+      float rawT1 = (vTC1 / K_SENSITIVITY) + tempCJC;
+      // ¡APLICAMOS FIR!
+      float t1_filtrada = applyFIR(&filterTC1, rawT1);
 
       // 3. Leer TC2
       config_ads_tc(0x5E); 
@@ -96,12 +170,14 @@ void loopLectura(void * pvParameters) {
       vTaskDelay(pdMS_TO_TICKS(25)); 
       long rawTC2 = wait_and_read();
       float vTC2 = (float)rawTC2 * (VOLTAGE_REF / (8388607.0 * GAIN));
-      float t2 = (vTC2 / K_SENSITIVITY) + tempCJC;
+      float rawT2 = (vTC2 / K_SENSITIVITY) + tempCJC;
+      // ¡APLICAMOS FIR!
+      float t2_filtrada = applyFIR(&filterTC2, rawT2);
 
-      // Formato para Python: t1,t2
-      Serial.print(t1, 2); 
+      // Enviamos los datos filtrados
+      Serial.print(t1_filtrada, 2); 
       Serial.print(","); 
-      Serial.println(t2, 2);
+      Serial.println(t2_filtrada, 2);
 
       vTaskDelay(pdMS_TO_TICKS(50)); 
     } else {
@@ -247,7 +323,7 @@ void drawCalibrate() {
   tft.drawString("Menu de Calibracion", tft.width()/2, tft.height()/2);
 }
 void handleTouch(uint16_t x, uint16_t y) {
-  if (currentScreen == SCREEN_HOME) { if (x < btnW) startPing(); else drawCalibrate(); }
+  if (currentScreen == SCREEN_HOME) { if (x > btnW) startPing(); else drawCalibrate(); }
   else if (currentScreen == SCREEN_ERROR) startPing();
   else if (currentScreen == SCREEN_CALIBRATE) drawHome();
 }

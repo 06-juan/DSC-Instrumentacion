@@ -5,6 +5,7 @@ from pyqtgraph.Qt import QtCore
 import time
 
 n = 100  # segundos de medición
+offset = 0.68
 
 com = ComunicacionSerial(puerto="COM5", baudios=115200)
 op = OperadorDiferencia()
@@ -27,7 +28,7 @@ def tick():
     # 1. GESTIÓN DE TIEMPO (Fin de medición)
     # ==============================
     if estado == "midiendo":
-        if time.time() - t_inicio >= n:
+        if time.time() - t_inicio >= n+13:
             print("⏰ Tiempo cumplido, enviando STOP")
             com.enviar("stop")
             estado = "idle"
@@ -55,7 +56,7 @@ def tick():
         graf.limpiar()            # Borramos la gráfica anterior
         
         com.enviar(f"pong {n}")
-        print(f"<< Pong enviado con n = {n}")
+        print(f"<< Pong enviado con n = {n+13}")
         
         t_inicio = time.time()
         estado = "midiendo"
@@ -71,24 +72,24 @@ def tick():
     # ==============================
     if estado == "midiendo":
         try:
-            # Suponiendo que llega "25.0,24.5"
             valores = linea.split(",")
             if len(valores) < 2: return
             
-            t1 = float(valores[0])
-            t2 = float(valores[1])
+            t1_raw = float(valores[0])
+            t2_raw = float(valores[1])
             
-            # Procesamos enviando ambos valores
-            t, diff = op.procesar(t1, t2)
-            
-            if t is None:
+            # Ahora procesar devuelve 4 valores
+            res = op.procesar(t1_raw, t2_raw)
+    
+            if res[0] == "llenando":
+                graf.mostrar_llenado(res[1])
                 return
-
-            # Actualizamos la gráfica
-            graf.actualizar(t, diff, t1, t2)
-            
+        
+            # Ahora 'res' siempre tendrá (t, diff, t1_f, t2_f) reales
+            t, diff, t1_f, t2_f = res
+            graf.actualizar(t, diff, t1_f, t2_f)
+                    
         except (ValueError, IndexError):
-            # Ignoramos líneas mal formadas o ruido
             return
 
 # -------------------------

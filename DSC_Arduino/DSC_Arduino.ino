@@ -17,7 +17,8 @@
 #define ADS_CMD_START  0x08
 
 const float RES_NOMINAL = 10000.0, TEMP_NOMINAL = 298.15, BETA_COEFF = 3950.0;
-const float IDAC_VALUE = 0.000100, K_SENSITIVITY = 0.00004127, VOLTAGE_REF = 2.048, GAIN = 128.0;
+// Se cambió GAIN de 128.0 a 32.0 para que la matemática coincida con el hardware
+const float IDAC_VALUE = 0.000100, K_SENSITIVITY = 0.00004127, VOLTAGE_REF = 2.048, GAIN = 32.0; // <--- CAMBIO AQUÍ (Gain 32)
 
 // Inicializamos el bus HSPI
 SPIClass hspi(HSPI); 
@@ -37,79 +38,6 @@ int remainingSeconds = 0;
 TaskHandle_t TareaADC;
 TaskHandle_t TareaInterfaz;
 
-// --- CONFIGURACIÓN FILTRO FIR ---
-#define FIR_ORDER 47  // Cambia esto al orden de tu filtro (ej. 5, 10, 21...)
-const float fir_coeffs[FIR_ORDER] = { 0.000000000000000000,
-0.000052812701766234,
-0.000227780984395073,
-0.000556674204923567,
-0.001080638242463714,
-0.001848965451925914,
-0.002916235039017790,
-0.004337949677900377,
-0.006164983047460567,
-0.008437318120861112,
-0.011177678264584583,
-0.014385717266750539,
-0.018033430880593306,
-0.022062378850126810,
-0.026383167587788789,
-0.030877451652306920,
-0.035402484820087544,
-0.039798010916682079,
-0.043895054667754355,
-0.047525977081741028,
-0.050535018720183199,
-0.052788482896461396,
-0.054183717786886923,
-0.054656142274675905,
-0.054183717786886923,
-0.052788482896461396,
-0.050535018720183192,
-0.047525977081741048,
-0.043895054667754362,
-0.039798010916682079,
-0.035402484820087544,
-0.030877451652306945,
-0.026383167587788796,
-0.022062378850126806,
-0.018033430880593299,
-0.014385717266750546,
-0.011177678264584590,
-0.008437318120861115,
-0.006164983047460575,
-0.004337949677900381,
-0.002916235039017789,
-0.001848965451925916,
-0.001080638242463714,
-0.000556674204923569,
-0.000227780984395074,
-0.000052812701766235,
-0.000000000000000000 }; // Pon tus coeficientes aquí
-
-// Estructura para que cada termocupla tenga su propia memoria
-struct FIRFilter {
-  float history[FIR_ORDER];
-  int index;
-};
-
-FIRFilter filterTC1 = { {0}, 0 };
-FIRFilter filterTC2 = { {0}, 0 };
-
-// La función mágica que procesa el dato
-float applyFIR(FIRFilter *f, float newValue) {
-  f->history[f->index] = newValue; // Metemos el dato nuevo en la fila
-  f->index = (f->index + 1) % FIR_ORDER; // Movemos el puntero de forma circular
-
-  float output = 0;
-  for (int i = 0; i < FIR_ORDER; i++) {
-    // Sumamos: valor_histórico * coeficiente_correspondiente
-    int hIdx = (f->index + i) % FIR_ORDER;
-    output += f->history[hIdx] * fir_coeffs[i];
-  }
-  return output;
-}
-
 // ------------------ SETUP ------------------
 void setup() {
   Serial.begin(115200);
@@ -124,7 +52,7 @@ void setup() {
   // 2. Inicializar ADS1220 (Tu bus HSPI personalizado)
   pinMode(HSPI_CS, OUTPUT);
   digitalWrite(HSPI_CS, HIGH);
-  
+   
   // IMPORTANTE: Esta línea mapea el hardware HSPI a tus pines específicos
   hspi.begin(HSPI_SCLK, HSPI_MISO, HSPI_MOSI, HSPI_CS);
 
@@ -145,39 +73,38 @@ void loop() {
 void loopLectura(void * pvParameters) {
   for (;;) {
     if (midiendo) {
-      // 1. Leer CJC (Compensación de unión fría)
+      // 1. Leer CJC (NTC se mantiene igual, generalmente ganancia 1)
       config_ads_ntc(); 
       ads_start(); 
       vTaskDelay(pdMS_TO_TICKS(25)); 
       long rawNTC = wait_and_read();
+      
       float vNTC = (float)rawNTC * (VOLTAGE_REF / 8388607.0);
       float rNTC = vNTC / IDAC_VALUE;
       float tempCJC = (1.0 / ((log(rNTC / RES_NOMINAL) / BETA_COEFF) + (1.0 / TEMP_NOMINAL))) - 273.15;
 
       // 2. Leer TC1
-      config_ads_tc(0x0E); 
+      // 0x0A: Mux (0000) + Gain 32 (101) + PGA (0) = 0000 1010 = 0x0A
+      config_ads_tc(0x0A); // <--- CAMBIO AQUÍ (Antes 0x0E para 128)
       ads_start(); 
       vTaskDelay(pdMS_TO_TICKS(25)); 
       long rawTC1 = wait_and_read();
       float vTC1 = (float)rawTC1 * (VOLTAGE_REF / (8388607.0 * GAIN));
-      float rawT1 = (vTC1 / K_SENSITIVITY) + tempCJC;
-      // ¡APLICAMOS FIR!
-      float t1_filtrada = applyFIR(&filterTC1, rawT1);
+      float t1 = (vTC1 / K_SENSITIVITY) + tempCJC;
 
       // 3. Leer TC2
-      config_ads_tc(0x5E); 
+      // 0x5A: Mux (0101) + Gain 32 (101) + PGA (0) = 0101 1010 = 0x5A
+      config_ads_tc(0x5A); // <--- CAMBIO AQUÍ (Antes 0x5E para 128)
       ads_start(); 
       vTaskDelay(pdMS_TO_TICKS(25)); 
       long rawTC2 = wait_and_read();
       float vTC2 = (float)rawTC2 * (VOLTAGE_REF / (8388607.0 * GAIN));
-      float rawT2 = (vTC2 / K_SENSITIVITY) + tempCJC;
-      // ¡APLICAMOS FIR!
-      float t2_filtrada = applyFIR(&filterTC2, rawT2);
+      float t2 = (vTC2 / K_SENSITIVITY) + tempCJC;
 
-      // Enviamos los datos filtrados
-      Serial.print(t1_filtrada, 2); 
+      // Formato para Python: t1,t2
+      Serial.print(t1, 2); 
       Serial.print(","); 
-      Serial.println(t2_filtrada, 2);
+      Serial.println(t2, 2);
 
       vTaskDelay(pdMS_TO_TICKS(50)); 
     } else {
@@ -198,6 +125,7 @@ void config_ads_ntc() {
 void config_ads_tc(uint8_t mux_gain_byte) {
   hspi.beginTransaction(adsSettings);
   digitalWrite(HSPI_CS, LOW);
+  // Se envía el byte modificado (0x0A o 0x5A)
   hspi.transfer(0x43); hspi.transfer(mux_gain_byte); hspi.transfer(0x04); hspi.transfer(0x10); hspi.transfer(0x02);
   digitalWrite(HSPI_CS, HIGH);
   hspi.endTransaction();
@@ -236,7 +164,7 @@ long wait_and_read() {
   uint8_t b3 = hspi.transfer(0x00);
   hspi.endTransaction();
   digitalWrite(HSPI_CS, HIGH);
-  
+   
   long value = ((long)b1 << 16) | ((long)b2 << 8) | b3;
   if (value & 0x800000) value |= 0xFF000000;
   return value;
@@ -323,7 +251,7 @@ void drawCalibrate() {
   tft.drawString("Menu de Calibracion", tft.width()/2, tft.height()/2);
 }
 void handleTouch(uint16_t x, uint16_t y) {
-  if (currentScreen == SCREEN_HOME) { if (x > btnW) startPing(); else drawCalibrate(); }
+  if (currentScreen == SCREEN_HOME) { if (x < btnW) startPing(); else drawCalibrate(); }
   else if (currentScreen == SCREEN_ERROR) startPing();
   else if (currentScreen == SCREEN_CALIBRATE) drawHome();
 }

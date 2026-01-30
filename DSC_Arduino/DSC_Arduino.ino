@@ -18,7 +18,6 @@ const float BETA_COEFF = 3950.0;
 const float IDAC_VALUE = 0.000100;
 const float K_SENSITIVITY = 0.00004127; 
 const float VOLTAGE_REF = 2.048;
-const float GAIN = 128.0;
 
 SPISettings adsSettings(1000000, MSBFIRST, SPI_MODE1);
 
@@ -67,46 +66,45 @@ void loopLectura(void * pvParameters) {
     float logR = log(rNTC / RES_NOMINAL);
     float tempCJC = (1.0 / ((logR / BETA_COEFF) + (1.0 / TEMP_NOMINAL))) - 273.15;
 
-    // ---- 2. TC1 (AIN0-AIN1) ----
+    // ---- 2.diff (AIN0-AIN1) ----
     config_tc_ain0_ain1();
     ads_start();
     delay(60);
 
-    long rawTC1 = wait_and_read();
-    float vTC1 = rawTC1 * (2.0 * VOLTAGE_REF) / (GAIN * 8388608.0);
-    float t1 = (vTC1 / K_SENSITIVITY);
+    long rawdiff = wait_and_read();
+    float GAIN_ADS_diff = 128.0; 
+    float vdiff = rawdiff * (2.0 * VOLTAGE_REF) / (GAIN_ADS_diff * 8388608.0);
+    float diff = (vdiff / K_SENSITIVITY);
 
-    // ---- 3. TC2 (AIN0-AIN2) ----
+    // ---- 3. TC1 (AIN0-AIN2) ----
     config_tc_ain0_ain2();
     ads_start();
     delay(60);
 
+    long rawTC1 = wait_and_read();
+    float GAIN_ADS1 = 32.0; 
+    float vTC1 = rawTC1 * (2.0 * VOLTAGE_REF) / (GAIN_ADS1 * 8388608.0);
+    float t1 = (vTC1 / K_SENSITIVITY) + tempCJC;
+
+    // ---- 4. TC2 (AIN1-AIN2) ----
+    config_tc_ain1_ain2();
+    ads_start();
+    delay(60);
+
     long rawTC2 = wait_and_read();
-    float vTC2 = rawTC2 * (2.0 * VOLTAGE_REF) / (GAIN * 8388608.0);
+    float GAIN_ADS2 = 32.0; 
+    float vTC2 = rawTC2 * (2.0 * VOLTAGE_REF) / (GAIN_ADS2 * 8388608.0);
     float t2 = (vTC2 / K_SENSITIVITY) + tempCJC;
 
-// --- 4. IMPRESIÓN DE DATOS (CJC, TC1, V1, TC2, V2) ---
-    // El formato es: Temp_NTC, Temp_TC1, Voltaje_TC1, Temp_TC2, Voltaje_TC2
+// --- 5. IMPRESIÓN DE DATOS ---
     
     Serial.print(tempCJC, 4);
     Serial.print(" , ");
+    Serial.print(t1, 4);
+    Serial.print(" , ");
     Serial.print(t2, 4);
     Serial.print(" , ");
-    Serial.print(t1, 4);
-    // Multiplicamos por 1000 para ver el voltaje en milivoltios (mV), que es más fácil de leer
-    Serial.print(" , ");
-    Serial.print(vTC1 * 1000.0, 4); 
-    Serial.print(" , ");
-    Serial.print(vTC2 * 1000.0, 4);
-    Serial.println(); // Fin de línea
-
-    vTaskDelay(pdMS_TO_TICKS(100)); // Frecuencia de muestreo (10 Hz)
-
-    // Opcional: imprimir diferencia en consola si no usas el script de Python:
-    /*
-    Serial.print(" | DIF: ");
-    Serial.println(t1 - t2, 2);
-    */
+    Serial.println(diff, 4);
 
     vTaskDelay(pdMS_TO_TICKS(100)); // Frecuencia de muestreo (10 Hz)
   }
@@ -191,6 +189,16 @@ void config_tc_ain0_ain2() {
     0x04,
     0x20,
     0x00
+  };
+  write_regs(r);
+}
+
+void config_tc_ain1_ain2() {
+  uint8_t r[4] = {
+    0x3A,        // AIN1-AIN2, PGA=32 (Cambio de 0x1A a 0x3A)
+    0x04,        // Configuración de velocidad/modo
+    0x20,        // Referencia de voltaje
+    0x00         // IDACs y otros
   };
   write_regs(r);
 }

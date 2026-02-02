@@ -111,10 +111,10 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.estado == "midiendo":
             try:
                 valores = linea.split(",")
-                if len(valores) < 5: return
+                if len(valores) < 4: return
                 
                 # Desempaquetado (CJC, T1, T2, basura, diff)
-                cjc, t1, t2, _, diff = map(float, valores)
+                cjc, t1, t2, diff = map(float, valores)
                 
                 t = self.op.procesar(cjc, t1, t2, diff)
                 if t is not None:

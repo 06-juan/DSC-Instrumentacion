@@ -19,7 +19,7 @@ class OperadorDiferencia:
         # Abrimos el archivo (modo 'w' sobreescribe el anterior)
         self.f = open(self.nombre_archivo, "w", newline="")
         self.writer = csv.writer(self.f)
-        self.writer.writerow(["tiempo_s", "temp1", "temp2", "diferencia"])
+        self.writer.writerow(["tiempo_s", "CJC", "temp1", "temp2", "diferencia"])
         self.f.flush()
 
     def procesar(self, CJC, t1, t2, diff):

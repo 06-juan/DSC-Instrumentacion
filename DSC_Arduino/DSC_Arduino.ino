@@ -119,7 +119,7 @@ void loopLectura(void * pvParameters) {
       vTaskDelay(pdMS_TO_TICKS(60)); // Tiempo de conversión
 
       long rawdiff = wait_and_read();
-      float GAIN_ADS_diff = 128.0; 
+      float GAIN_ADS_diff = 32; 
       float vdiff = rawdiff * (2.0 * VOLTAGE_REF) / (GAIN_ADS_diff * 8388608.0);
       float diff = (vdiff / K_SENSITIVITY);
 
@@ -168,9 +168,6 @@ void loopLectura(void * pvParameters) {
 void config_ads_ntc() {
   hspi.beginTransaction(adsSettings);
   digitalWrite(HSPI_CS, LOW);
-  // Reg 0: AIN3-AVSS (0x70) + Gain 1 (0x00) -> 0x70... Espera, tu código original
-  // enviaba: 0x43 (WREG), 0xB1, 0x04, 0x13, 0x82.
-  // 0xB1 en Reg0 significa: AIN3-AVSS (1011) y GAIN=4 (001)? 
   hspi.transfer(0x43); 
   hspi.transfer(0xB1); 
   hspi.transfer(0x04); 
@@ -180,41 +177,30 @@ void config_ads_ntc() {
   hspi.endTransaction();
 }
 
-void config_tc_ain0_ain1() {
-  uint8_t r[4] = {
-    0x0E,        // AIN0-AIN1, PGA=128
-    0x04,        // 20 SPS, single-shot
-    0x20,        // Vref interna
-    0x00
-  };
-  write_regs(r);
+// Función genérica para configurar cualquier termopar
+// mux_gain: el byte que calculamos antes (ej: 0x0A para PGA 32)
+void config_tc_generic(uint8_t mux_gain) {
+  // 1. Cambiamos Canal y Ganancia (Registro 0)
+  write_single_reg(0, mux_gain);
+  
+  // 2. IMPORTANTE: Apagamos IDACs que pudieron quedar de la NTC (Registro 2)
+  // Si no haces esto, la corriente del NTC afectará la lectura del termopar.
+  write_single_reg(2, 0x00); 
 }
 
-void config_tc_ain0_ain2() {
-  uint8_t r[4] = {
-    0x1A,        // AIN0-AIN2, PGA=32
-    0x04,
-    0x20,
-    0x00
-  };
-  write_regs(r);
-}
+void config_tc_ain0_ain1() { config_tc_generic(0x0A); } // AIN0-AIN1, Ganancia 32
+void config_tc_ain0_ain2() { config_tc_generic(0x1A); } // AIN0-AIN2, Ganancia 32
+void config_tc_ain1_ain2() { config_tc_generic(0x3A); } // AIN1-AIN2, Ganancia 32
 
-void config_tc_ain1_ain2() {
-  uint8_t r[4] = {
-    0x3A,        // AIN1-AIN2, PGA=32 (Cambio de 0x1A a 0x3A)
-    0x04,        // Configuración de velocidad/modo
-    0x20,        // Referencia de voltaje
-    0x00         // IDACs y otros
-  };
-  write_regs(r);
-}
-
-void write_regs(uint8_t *r) {
+void write_single_reg(uint8_t regAddr, uint8_t value) {
   hspi.beginTransaction(adsSettings);
   digitalWrite(HSPI_CS, LOW);
-  hspi.transfer(0x40 | 0x03);
-  for (int i = 0; i < 4; i++) hspi.transfer(r[i]);
+  
+  // Comando: 0x40 (WREG) | (regAddr << 2) | (numero_de_regs_menos_1)
+  // Para un solo registro, nn es 0.
+  hspi.transfer(0x40 | (regAddr << 2)); 
+  hspi.transfer(value);
+  
   digitalWrite(HSPI_CS, HIGH);
   hspi.endTransaction();
 }
